@@ -25,7 +25,7 @@ from easy_elasticsearch import ElasticSearchBM25
 
 pool = {
     'id1': 'What is Python? Is it a programming language',
-    'id2': 'Which Python version is the best?'
+    'id2': 'Which Python version is the best?',
     'id3': 'Using easy-elasticsearch in Python is really convenient!'
 }
 bm25 = ElasticSearchBM25(pool, 'elasticsearch-7.12.1/bin')  # remember to use your local path of elasticsearh/bin
@@ -36,4 +36,4 @@ scores = bm25.score(query, document_ids=['id2', 'id3'])
 
 print(query, rank, scores)
 ```
-Another example for retrieving Quora questions can be found in [example/quora.py](example/quora.py).
+Another example for retrieving Quora questions can be found in [example/quora.py](https://github.com/kwang2049/easy-elasticsearch/blob/main/example/quora.py).

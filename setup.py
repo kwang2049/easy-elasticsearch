@@ -26,5 +26,6 @@ setuptools.setup(
     install_requires=[
         'elasticsearch==7.12.1',
         'tqdm',
+        'requests'
     ],
 )
