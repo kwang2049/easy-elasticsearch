@@ -4,7 +4,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     readme = fh.read()
 
 setuptools.setup(
-    name="easy-elasticsearch", # Replace with your own username
+    name="easy-elasticsearch",
     version="0.0.1",
     author="Kexin Wang",
     author_email="kexin.wang.2049@gmail.com",

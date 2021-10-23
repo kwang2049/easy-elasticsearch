@@ -2,6 +2,7 @@ import os
 from elasticsearch import Elasticsearch, helpers, NotFoundError
 import csv
 import time
+from torch.nn.modules import container
 import tqdm
 import requests
 import os
@@ -19,27 +20,100 @@ logging.basicConfig(
 
 
 class ElasticSearchBM25(object):
-    
-    def check_service_running(self, port):
+    """
+    Connect to the Elasticsearch service when both valid `host` and `port_http` indicated or create a new one via docker when `host` is None.
+    :param corpus: A mapping from IDs to docs.
+    :param index_name: Name of the elasticsearch index.
+    :param reindexing: Whether to re-index the documents if the index exists.
+    :param port_http: The HTTP port of the elasticsearch service.
+    :param port_tcp: The TCP port of the elasticsearch service.
+    :param host: The host address of the elasticsearch service. If set None, an ES docker container will be started with the indicated port numbers, `port_http` and `port_tcp` exposed.
+    :param es_version: Indicating the elasticsearch version for the docker container.
+    :param timeout: Timeout (in seconds) at the ES-service side.
+    :param max_waiting: Maximum time (in seconds) to wait for starting the elasticsearch docker container.
+    """
+    def __init__(
+        self, 
+        corpus: Dict[str, str], 
+        index_name: str='one_trial', 
+        reindexing: bool=True, 
+        port_http: str='9200',
+        port_tcp: str='9300',
+        host: str=None,
+        es_version: str='7.15.1',
+        timeout: int=100,
+        max_waiting: int=100
+    ):
+        self.container_name = None
+        if host is not None:
+            assert self._check_service_running(host, port_http), f"Cannot connect to {host}:{port_http}"
+            logger.info(f'Successfully reached out to ES service at {host}:{port_http}')
+        else:
+            host = 'http://localhost'
+            if self._check_service_running(host, port_http):
+                logger.info(f'Successfully reached out to ES service at {host}:{port_http}')
+            else:
+                logger.info('No host running. Now start a new ES service via docker')
+                self.container_name = self._start_service(port_http, port_tcp, es_version, max_waiting)
+            
+        es = Elasticsearch([{'host': 'localhost', 'port': port_http},], timeout=timeout)
+        logger.info(f'Successfully built connection to ES service at {host}:{port_http}')
+        self.es = es
+
+        if es.indices.exists(index=index_name):
+            if reindexing:
+                logger.info(f'Index {index_name} found and it will be indexed again since reindexing=True')
+                es.indices.delete(index=index_name)
+        else:        
+            logger.info(f'No index found and now do indexing')
+            self._index_corpus(corpus, index_name)
+        self.index_name = index_name
+        logger.info('All set up.')
+
+    def _check_service_running(self, host, port) -> bool:
+        """
+        Check whether the ES service is reachable.
+        :param host: The host address.
+        :param port: The HTTP port.
+        :return: Whether the ES service is reachable.
+        """
         try:
-            out = requests.get(f'http://localhost:9200/')
-            return out.json()['cluster_name'] == 'elasticsearch'
+            return requests.get(f'{host}:{port}').status_code == 200
         except:
             return False
     
-    def start_service(self, es_bin, port_http, port_tcp, max_waiting):
-        assert 'elasticsearch' in os.listdir(es_bin), f'No elasticsearch found in {es_bin}'
-        with open(os.devnull, 'w') as null_file:
-            self.p = subprocess.Popen(os.path.join(es_bin, "elasticsearch"), shell=True, stdout=null_file, stderr=subprocess.STDOUT)
-            logger.info('Server shell PID: {}'.format(self.p.pid))
-        
-        ntried = 0
-        while not self.check_service_running(port_http) and ntried < max_waiting:
+    def _start_service(self, port_http, port_tcp, es_version, max_waiting):
+        """
+        Start an ES docker container at localhost.
+        :param port_http: The HTTP port.
+        :param port_tcp: The TCP port.
+        :param es_version: The ES version.
+        :param max_waiting: Maximum time of waiting for starting the docker container.
+        :return: Name of the docker container.
+        """
+        host = 'http://localhost'
+        container_name = f'easy-elasticsearch-node{int(time.time())}'
+        cmd = f'docker run -p {port_http}:9200 -p {port_tcp}:9300 -e "discovery.type=single-node" --detach ' + \
+             f'--name {container_name} docker.elastic.co/elasticsearch/elasticsearch:{es_version}'
+        logger.info(f'Running command: `{cmd}` with max #tries={max_waiting}s')
+        os.system(cmd)
+        for waited in tqdm.trange(max_waiting):
+            if self._check_service_running(host, port_http):
+                break
             time.sleep(1)
-            ntried += 1
-        assert self.check_service_running(port_http), 'Exceeded maximum time for waiting, cannot start elasticsearch service'
+        if waited == (max_waiting - 1):
+            logger.warning('Timeout to start the ES docker container, please increase max_waiting')
 
-    def index_corpus(self, corpus, index_name):
+        assert self._check_service_running(host, port_http), f"Cannot connect to {host}:{port_http}"
+        logger.info(f'Successfully started a ES container with name "{container_name}"')
+        return container_name
+
+    def _index_corpus(self, corpus, index_name):
+        """
+        Index the corpus.
+        :param corpus: A mapping from document ID to documents.
+        :param index_name: The name of the target ES index.
+        """
         es_index = {
             "mappings": {
                 "properties": {
@@ -67,24 +141,15 @@ class ElasticSearchBM25(object):
             helpers.bulk(self.es, bulk_data)
         logger.info(f'Indexing work done: {ndocuments} documents indexed') 
 
-    def __init__(self, corpus: Dict[str, str], es_bin, index_name='one_trial', reindexing=True, port_http='9200', port_tcp='9300', max_waiting=60):
-        if self.check_service_running(port_http):
-            logger.info(f'Elasticsearch service found at localhost:{port_http}')
-        else:
-            logger.info(f'No running service found at localhost:{port_http}. Now start it')
-            self.start_service(es_bin, port_http, port_tcp, max_waiting)
-        
-        es = Elasticsearch()
-        self.es = es
-        if es.indices.exists(index=index_name) and reindexing:
-            logger.info(f'Index {index_name} found and it will be indexed again since reindexing=True')
-            es.indices.delete(index=index_name)
-        
-        self.index_corpus(corpus, index_name)
-        self.index_name = index_name
-        logger.info('All set up.')
-    
     def query(self, query: str, topk, return_scores=False) -> Dict[str, str]:
+        """
+        Search for a given query.
+        :param query: The query text.
+        :param topk: Specifying how many top documents to return. Should less than 10000.
+        :param return_scores: Whether to return the scores.
+        :return: Ranked documents, a mapping from IDs to the documents (and also the scores, a mapping from IDs to scores). 
+        """
+        assert topk <= 10000, '`topk` is too large!'
         result = self.es.search(index=self.index_name, size=min(topk, 10000), body={
             "query": 
             {
@@ -101,8 +166,15 @@ class ElasticSearchBM25(object):
         else:
             return documents_ranked
     
-    def score(self, query: str, document_ids: List[int]) -> Dict[str, str]:
-        for i in range(60):
+    def score(self, query: str, document_ids: List[int], max_ntries=60) -> Dict[str, str]:
+        """
+        Scoring a query against the given documents (IDs).
+        :param query: The query text.
+        :param document_ids: The document IDs.
+        :param max_ntries: Maximum time (in seconds) for trying.
+        :return: The mapping from IDs to scores.
+        """
+        for i in range(max_ntries):
             try:
                 scores = {}
                 for document_id in document_ids:
@@ -117,11 +189,31 @@ class ElasticSearchBM25(object):
                     scores[document_id] = result['explanation']['value']
                 return scores
             except NotFoundError as e:
-                if i == 59:
+                if i == max_ntries:
                     raise e
-                logger.info(f'NotFoundError, now re-trying ({i+1}/60).')
+                logger.info(f'NotFoundError, now re-trying ({i+1}/{max_ntries}).')
                 time.sleep(1)
                 
     def delete_index(self):
-        logger.info(f'{self.index_name} index exists? {self.es.indices.exists(index=self.index_name)}')
-        logger.info(f'Delete {self.index_name}: {self.es.indices.delete(self.index_name)}')
+        """
+        Delete the used index.
+        """
+        if self.es.indices.exists(index=self.index_name):
+            logger.info(f'Delete "{self.index_name}": {self.es.indices.delete(self.index_name)}')
+        else:
+            logger.warning(f'Index "{self.index_name}" does not exist!')
+    
+    def delete_container(self):
+        """
+        Delete the used docker container.
+        """
+        if self.container_name is not None:
+            cmd = f'docker rm -f {self.container_name}'
+            logger.info(f'Delete container "{self.container_name}": {os.system(cmd)}')
+        else:
+            logger.warning(f'No running ES container found!')
+            cmd = 'docker ps | grep "easy-elasticsearch-node"'
+            with os.popen(cmd) as f:
+                idling_nodes = f.read()
+            if idling_nodes:
+                logger.warning(f'Found idling nodes:\n {idling_nodes}.')

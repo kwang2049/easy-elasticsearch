@@ -59,7 +59,9 @@ questions = [all_questions[qid] for qid in qids]
 print('|questions|:', len(questions))
 print('|words|:', len([word for q in questions for word in q.split()]))
 
-bm25 = ElasticSearchBM25(dict(zip(qids, questions)), 'PATH-TO-YOUR-elasticsearch-xx.xx.xx/bin')
+bm25 = ElasticSearchBM25(dict(zip(qids, questions)), port_http='9222', port_tcp='9333')
+## Or use an existing ES service:
+# bm25 = ElasticSearchBM25(dict(zip(qids, questions)), host='http://localhost', port_http='9200', port_tcp='9300')
 
 query = "What is Python?"
 rank = bm25.query(query, topk=10)  # topk should be <= 10000
@@ -70,3 +72,4 @@ print('###rank###:', json.dumps(rank, indent=4))
 print('###scores###:', json.dumps(scores, indent=4))
 
 bm25.delete_index()  # delete the one-trial index named 'one_trial'
+bm25.delete_container()
