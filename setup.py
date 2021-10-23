@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="easy-elasticsearch",
-    version="0.0.1",
+    version="0.0.3",
     author="Kexin Wang",
     author_email="kexin.wang.2049@gmail.com",
     description="An easy-to-use Elasticsearch BM25 interface",
