@@ -7,7 +7,7 @@ import tqdm
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--mode', choices=['docker', 'existing'], default='docker', help='What kind of ES service')
+parser.add_argument('--mode', choices=['docker', 'executable', 'existing'], default='docker', help='What kind of ES service')
 mode = parser.parse_args().mode
 
 
@@ -65,7 +65,9 @@ print('|questions|:', len(questions))
 print('|words|:', len([word for q in questions for word in q.split()]))
 
 if mode == 'docker':
-    bm25 = ElasticSearchBM25(dict(zip(qids, questions)), port_http='9222', port_tcp='9333')
+    bm25 = ElasticSearchBM25(dict(zip(qids, questions)), port_http='9222', port_tcp='9333', service_type='docker')
+elif mode == 'executable':
+    bm25 = ElasticSearchBM25(dict(zip(qids, questions)), port_http='9222', port_tcp='9333', service_type='executable')
 else:
     # Or use an existing ES service:
     assert mode == 'existing'
@@ -74,7 +76,6 @@ else:
 query = "What is Python?"
 rank = bm25.query(query, topk=10)  # topk should be <= 10000
 scores = bm25.score(query, document_ids=list(rank.keys()))
-
 print('###query###:', query)
 print('###rank###:', json.dumps(rank, indent=4))
 print('###scores###:', json.dumps(scores, indent=4))
@@ -82,3 +83,5 @@ print('###scores###:', json.dumps(scores, indent=4))
 bm25.delete_index()  # delete the one-trial index named 'one_trial'
 if mode == 'docker':
     bm25.delete_container()
+elif mode == 'executable':
+    bm25.delete_excutable()

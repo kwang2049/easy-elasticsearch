@@ -7,6 +7,8 @@ import tqdm
 import requests
 import os
 import time
+import requests
+import tarfile
 import subprocess
 from typing import List, Dict
 import logging
@@ -28,9 +30,11 @@ class ElasticSearchBM25(object):
     :param port_http: The HTTP port of the elasticsearch service.
     :param port_tcp: The TCP port of the elasticsearch service.
     :param host: The host address of the elasticsearch service. If set None, an ES docker container will be started with the indicated port numbers, `port_http` and `port_tcp` exposed.
+    :param service_type: When starting ES service needed, use either "docker" to start a new ES docker container or "executable" to download executable ES and run.
     :param es_version: Indicating the elasticsearch version for the docker container.
     :param timeout: Timeout (in seconds) at the ES-service side.
     :param max_waiting: Maximum time (in seconds) to wait for starting the elasticsearch docker container.
+    :param cache_dir: Cache directory for downloading the ES executable if needed.
     """
     def __init__(
         self, 
@@ -40,11 +44,14 @@ class ElasticSearchBM25(object):
         port_http: str='9200',
         port_tcp: str='9300',
         host: str=None,
+        service_type: str='docker',
         es_version: str='7.15.1',
         timeout: int=100,
-        max_waiting: int=100
+        max_waiting: int=100,
+        cache_dir: str='/tmp'
     ):
         self.container_name = None
+        self.pid = None
         if host is not None:
             self._wait_and_check(host, port_http, max_waiting)
             logger.info(f'Successfully reached out to ES service at {host}:{port_http}')
@@ -52,19 +59,21 @@ class ElasticSearchBM25(object):
             host = 'http://localhost'
             if self._check_service_running(host, port_http):
                 logger.info(f'Successfully reached out to ES service at {host}:{port_http}')
-            else:
+            elif service_type == 'docker':
                 logger.info('No host running. Now start a new ES service via docker')
-                self.container_name = self._start_service(port_http, port_tcp, es_version, max_waiting)
+                self.container_name = self._start_docker_service(port_http, port_tcp, es_version, max_waiting)
+            elif service_type == 'executable':
+                logger.info('No host running. Now start a new ES service via downloading the executable software')
+                self.pid = self._start_executable_service(port_http, port_tcp, es_version, max_waiting, cache_dir)
             
         es = Elasticsearch([{'host': 'localhost', 'port': port_http},], timeout=timeout)
         logger.info(f'Successfully built connection to ES service at {host}:{port_http}')
         self.es = es
-
         if es.indices.exists(index=index_name):
             if reindexing:
                 logger.info(f'Index {index_name} found and it will be indexed again since reindexing=True')
                 es.indices.delete(index=index_name)
-        else:        
+        else:
             logger.info(f'No index found and now do indexing')
             self._index_corpus(corpus, index_name)
         self.index_name = index_name
@@ -90,9 +99,11 @@ class ElasticSearchBM25(object):
                 timeout = False
                 break
             time.sleep(1)
-        assert timeout == False, 'Timeout to start the ES docker container or connect to the ES service, please increase max_waiting'
+        assert timeout == False, 'Timeout to start the ES docker container or connect to the ES service, ' + \
+            'please increase max_waiting or check the idling ES services ' + \
+            '(starting multiple ES instances from ES executable is not allowed)'
     
-    def _start_service(self, port_http, port_tcp, es_version, max_waiting):
+    def _start_docker_service(self, port_http, port_tcp, es_version, max_waiting):
         """
         Start an ES docker container at localhost.
         :param port_http: The HTTP port.
@@ -111,6 +122,50 @@ class ElasticSearchBM25(object):
         self._wait_and_check(host, port_http, max_waiting)
         logger.info(f'Successfully started a ES container with name "{container_name}"')
         return container_name
+    
+    def _start_executable_service(self, port_http, port_tcp, es_version, max_waiting, cache_dir):
+        """
+        Start an ES service from an executable program at localhost.
+        :param port_http: The HTTP port.
+        :param port_tcp: The TCP port.
+        :param es_version: The ES version.
+        :param max_waiting: Maximum time of waiting for starting the docker container.
+        :return: Name of the docker container.
+        """
+        host = 'http://localhost'
+        download_path = cache_dir
+        excutable_path = os.path.join(download_path, f'elasticsearch-{es_version}', 'bin', 'elasticsearch')
+        
+        if not os.path.exists(excutable_path):
+            tar_gz = os.path.join(download_path, f'elasticsearch-{es_version}-linux-x86_64.tar.gz')
+            logger.info(f'Found no existing executable. Now download it to {tar_gz}')
+            chunk_size = 1024
+            url = f'https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{es_version}-linux-x86_64.tar.gz'
+            r = requests.get(url, stream=True)
+            total = int(r.headers.get('Content-Length', 0))
+            logger.info('Begin downloading the ES excutable')
+            with open(tar_gz, 'wb') as f:
+                progress_bar = tqdm.tqdm(total=total, unit='iB', unit_scale=True, unit_divisor=chunk_size)
+                for data in r.iter_content(chunk_size=chunk_size):
+                    size = f.write(data)
+                    progress_bar.update(size)
+            
+            logger.info('Unzipping the tar.gz file')
+            with tarfile.open(tar_gz, "r:gz") as f:
+                f.extractall(path=download_path)
+
+        logger.info('Starting ES')
+        assert os.path.exists(excutable_path), 'Cannot find the executable!'
+        cmd = f'{excutable_path} -E http.port={port_http} -E transport.tcp.port={port_tcp}'
+        logger.info(f'Running command `{cmd}`')
+        with open(f'es-{es_version}.log', 'w') as fstdout:
+            proc = subprocess.Popen(cmd, shell=True, stdout=fstdout, stderr=subprocess.STDOUT)
+            es_pid = proc.pid + 1
+            logger.info(f'PID: {es_pid}')
+        
+        self._wait_and_check(host, port_http, max_waiting)
+        logger.info(f'Successfully started a ES service from executable')
+        return es_pid
 
     def _index_corpus(self, corpus, index_name):
         """
@@ -221,3 +276,18 @@ class ElasticSearchBM25(object):
                 idling_nodes = f.read()
             if idling_nodes:
                 logger.warning(f'Found idling nodes:\n {idling_nodes}.')
+
+    def delete_excutable(self):
+        """
+        Kill the ES process
+        """
+        if self.pid is not None:
+            logger.info(f'Kill process of PID {self.pid}')
+            os.kill(self.pid, 15)
+        else:
+            logger.warning(f'No running ES service found!')
+            cmd = 'ps -ef | grep elasticsearch'
+            with os.popen(cmd) as f:
+                idling_nodes = f.read()
+            if idling_nodes:
+                logger.warning(f'Found idling process:\n {idling_nodes}.')

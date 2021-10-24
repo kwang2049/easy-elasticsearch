@@ -14,7 +14,12 @@ pip install -e .
 ```
 
 ## Usage
-To utilize the elasticsearch service, one can either start an ES service manually and then indicate the `host` and `port_http` (please refere to [download_and_run.sh](easy_elasticsearch/examples/download_and_run.sh)); or leave `host=None` by default to start a docker container itself. Finally, just either call its ```rank``` or ```score``` function for retrieval or calculating BM25 scores.
+To utilize the elasticsearch service, one can select from 3 ways:
+- (1) Start an ES service manually and then indicate the `host` and `port_http` (please refere to [download_and_run.sh](easy_elasticsearch/examples/download_and_run.sh)); 
+- (2) Or leave `host=None` by default to start a docker container itself;
+- (3) Or leava `host=None` and setting `service_type=executable` to download an ES executable and start it in the back end.
+
+Finally, just either call its ```rank``` or ```score``` function for retrieval or calculating BM25 scores.
 ```python
 from easy_elasticsearch import ElasticSearchBM25
 
@@ -35,5 +40,9 @@ bm25.delete_container()  # remove the docker container'
 ```
 Another example for retrieving Quora questions can be found in [example/quora.py](https://github.com/kwang2049/easy-elasticsearch/blob/main/example/quora.py):
 ```bash
-python -m easy_elasticsearch.examples.quora
+python -m easy_elasticsearch.examples.quora  --mode docker
+```
+or
+```bash
+python -m easy_elasticsearch.examples.quora  --mode executable
 ```
