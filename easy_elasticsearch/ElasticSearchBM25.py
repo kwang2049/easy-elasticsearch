@@ -46,7 +46,7 @@ class ElasticSearchBM25(object):
     ):
         self.container_name = None
         if host is not None:
-            assert self._check_service_running(host, port_http), f"Cannot connect to {host}:{port_http}"
+            self._wait_and_check(host, port_http, max_waiting)
             logger.info(f'Successfully reached out to ES service at {host}:{port_http}')
         else:
             host = 'http://localhost'
@@ -82,6 +82,16 @@ class ElasticSearchBM25(object):
         except:
             return False
     
+    def _wait_and_check(self, host, port, max_waiting) -> bool:
+        logger.info(f'Waiting for the ES service to be well started. Maximum time waiting: {max_waiting}s')
+        timeout = True
+        for _ in tqdm.trange(max_waiting):
+            if self._check_service_running(host, port):
+                timeout = False
+                break
+            time.sleep(1)
+        assert timeout == False, 'Timeout to start the ES docker container or connect to the ES service, please increase max_waiting'
+    
     def _start_service(self, port_http, port_tcp, es_version, max_waiting):
         """
         Start an ES docker container at localhost.
@@ -92,19 +102,13 @@ class ElasticSearchBM25(object):
         :return: Name of the docker container.
         """
         host = 'http://localhost'
+        assert os.system('docker') == 0, 'Cannot run docker! Please make sure docker has been installed correctly.'
         container_name = f'easy-elasticsearch-node{int(time.time())}'
         cmd = f'docker run -p {port_http}:9200 -p {port_tcp}:9300 -e "discovery.type=single-node" --detach ' + \
              f'--name {container_name} docker.elastic.co/elasticsearch/elasticsearch:{es_version}'
-        logger.info(f'Running command: `{cmd}` with max #tries={max_waiting}s')
+        logger.info(f'Running command: `{cmd}`')
         os.system(cmd)
-        for waited in tqdm.trange(max_waiting):
-            if self._check_service_running(host, port_http):
-                break
-            time.sleep(1)
-        if waited == (max_waiting - 1):
-            logger.warning('Timeout to start the ES docker container, please increase max_waiting')
-
-        assert self._check_service_running(host, port_http), f"Cannot connect to {host}:{port_http}"
+        self._wait_and_check(host, port_http, max_waiting)
         logger.info(f'Successfully started a ES container with name "{container_name}"')
         return container_name
 

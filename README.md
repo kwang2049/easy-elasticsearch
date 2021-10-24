@@ -14,7 +14,7 @@ pip install -e .
 ```
 
 ## Usage
-To utilize the elasticsearch service, one can either start an ES service manually and then indicate the `host` and `port_http`; or leave `host=None` by default to start a docker container itself. Finally, just either call its ```rank``` or ```score``` function for retrieval or calculating BM25 scores.
+To utilize the elasticsearch service, one can either start an ES service manually and then indicate the `host` and `port_http` (please refere to [download_and_run.sh](easy_elasticsearch/examples/download_and_run.sh)); or leave `host=None` by default to start a docker container itself. Finally, just either call its ```rank``` or ```score``` function for retrieval or calculating BM25 scores.
 ```python
 from easy_elasticsearch import ElasticSearchBM25
 
