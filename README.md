@@ -38,7 +38,7 @@ print(query, rank, scores)
 bm25.delete_index()  # delete the one-trial index named 'one_trial'
 bm25.delete_container()  # remove the docker container'
 ```
-Another example for retrieving Quora questions can be found in [example/quora.py](https://github.com/kwang2049/easy-elasticsearch/blob/main/example/quora.py):
+<!-- Another example for retrieving Quora questions can be found in [easy_elasticsearch/example/quora.py](https://github.com/kwang2049/easy-elasticsearch/blob/main/example/quora.py): -->
 ```bash
 python -m easy_elasticsearch.examples.quora  --mode docker
 ```
