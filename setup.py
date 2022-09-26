@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="easy-elasticsearch",
-    version="0.0.7",
+    version="0.0.8",
     author="Kexin Wang",
     author_email="kexin.wang.2049@gmail.com",
     description="An easy-to-use Elasticsearch BM25 interface",
@@ -24,8 +24,8 @@ setup(
     ],
     python_requires=">=3.6",
     install_requires=[
-        'elasticsearch==7.12.1',
-        'tqdm',
-        'requests'
+        "elasticsearch>=7.9.1",  # BeIR requires es==7.9.1
+        "tqdm",
+        "requests",
     ],
 )
