@@ -232,6 +232,9 @@ class ElasticSearchBM25(object):
                 for did, documnt in zip(did_chunk, document_chunk)
             ]
             helpers.bulk(self.es, bulk_data)
+        self.es.indices.refresh(
+            index=index_name
+        )  # important!!! otherwise es might return nothing!!!
         logger.info(f"Indexing work done: {ndocuments} documents indexed")
 
     def query(self, query: str, topk, return_scores=False) -> Dict[str, str]:
