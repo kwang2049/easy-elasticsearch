@@ -24,7 +24,7 @@ setup(
     ],
     python_requires=">=3.6",
     install_requires=[
-        "elasticsearch>=7.9.1",  # BeIR requires es==7.9.1
+        "elasticsearch>=7.9.1,<8.0",  # BeIR requires es==7.9.1
         "tqdm",
         "requests",
     ],
